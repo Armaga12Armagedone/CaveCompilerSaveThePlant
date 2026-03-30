@@ -27,16 +27,16 @@ public class CameraMove : MonoBehaviour
     private Vector2 _inputDelta;
     private Camera _camera;
     
-
     private float _targetOrthographicSize;
     private float _currentZoomVelocity;
+
+        private bool _isPinching;
     private float _initialTouchDistance;
     private float _initialZoomSize;
-    private bool _isPinching = false;
-    
-
     private Vector2 _lastTouchPosition;
-    private bool _wasTouching = false;
+    private bool _wasTouching;
+
+    [SerializeField] private BuildSystem buildSystem;
 
     void Start()
     {
@@ -51,20 +51,16 @@ public class CameraMove : MonoBehaviour
 
     void Update()
     {
+                bool usedKeyboard = TryKeyboardMouseInput();
 
-        bool hasTouches = Touchscreen.current != null && Touchscreen.current.touches.Count > 0;
+        Debug.Log(usedKeyboard);
 
-
-        if (hasTouches)
+                if (!usedKeyboard)
         {
-            HandleTouchInput();
+            TryTouchInput();
         }
-        else
-        {
 
-            HandleKeyboardMouseInput();
-        }
-        if (_inputDelta.sqrMagnitude > 0.001f && !_isPinching)
+                if (_inputDelta.sqrMagnitude > 0.001f && !_isPinching)
         {
             _targetPosition += (Vector3)_inputDelta;
         }
@@ -72,13 +68,11 @@ public class CameraMove : MonoBehaviour
 
     void LateUpdate()
     {
-
-        Vector3 currentPos = transform.position;
+                Vector3 currentPos = transform.position;
         Vector3 targetWithZ = new Vector3(_targetPosition.x, _targetPosition.y, currentPos.z);
         transform.position = Vector3.SmoothDamp(currentPos, targetWithZ, ref _currentVelocity, smoothTime);
         
-
-        if (_camera != null && enableZoom)
+                if (_camera != null && enableZoom && !buildSystem.isBuilding)
         {
             _camera.orthographicSize = Mathf.SmoothDamp(
                 _camera.orthographicSize, 
@@ -89,50 +83,56 @@ public class CameraMove : MonoBehaviour
         }
     }
 
-    private void HandleKeyboardMouseInput()
+                   private bool TryKeyboardMouseInput()
     {
         _inputDelta = Vector2.zero;
+        bool anyInput = false;
 
+                Vector2 moveDir = Vector2.zero;
+        if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow)) moveDir.y += 1;
+        if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow)) moveDir.y -= 1;
+        if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow)) moveDir.x -= 1;
+        if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow)) moveDir.x += 1;
 
-        if (Keyboard.current != null)
+        if (moveDir != Vector2.zero)
         {
-            Vector2 moveDir = Vector2.zero;
-            if (Keyboard.current.wKey.isPressed || Keyboard.current.upArrowKey.isPressed) moveDir.y += 1;
-            if (Keyboard.current.sKey.isPressed || Keyboard.current.downArrowKey.isPressed) moveDir.y -= 1;
-            if (Keyboard.current.aKey.isPressed || Keyboard.current.leftArrowKey.isPressed) moveDir.x -= 1;
-            if (Keyboard.current.dKey.isPressed || Keyboard.current.rightArrowKey.isPressed) moveDir.x += 1;
-
-            if (moveDir != Vector2.zero)
-            {
-                moveDir.Normalize();
-                _inputDelta = moveDir * keyboardSpeed * Time.deltaTime;
-            }
+            anyInput = true;
+            moveDir.Normalize();
+            _inputDelta = moveDir * keyboardSpeed * Time.deltaTime;
         }
 
-
-        if (enableZoom && Mouse.current != null)
+                if (enableZoom)
         {
-            float scroll = Mouse.current.scroll.ReadValue().y;
+            float scroll = Input.GetAxis("Mouse ScrollWheel");
             if (Mathf.Abs(scroll) > 0.01f)
             {
+                anyInput = true;
                 float delta = invertScroll ? -scroll : scroll;
-                _targetOrthographicSize -= delta * zoomSpeed * 0.1f;
-                _targetOrthographicSize = Mathf.Clamp(_targetOrthographicSize, minZoom, maxZoom);
+                _targetOrthographicSize -= delta * zoomSpeed * 5f;                 _targetOrthographicSize = Mathf.Clamp(_targetOrthographicSize, minZoom, maxZoom);
             }
         }
+
+        return anyInput;
     }
 
-    private void HandleTouchInput()
+                    private bool TryTouchInput()
     {
+        if (Touchscreen.current == null) return false;
+
         var touches = Touchscreen.current.touches;
         int activeTouches = 0;
         foreach (var touch in touches)
             if (touch.press.isPressed) activeTouches++;
 
-
-        if (activeTouches == 1 && !_isPinching)
+        if (activeTouches == 0)
         {
+                        _wasTouching = false;
+            _isPinching = false;
+            return false;
+        }
 
+                if (activeTouches == 1 && !_isPinching)
+        {
             var touch = GetPrimaryTouch();
             if (touch != null)
             {
@@ -140,28 +140,23 @@ public class CameraMove : MonoBehaviour
 
                 if (!_wasTouching)
                 {
-
                     _lastTouchPosition = currentPos;
                     _wasTouching = true;
                 }
                 else
                 {
-
                     Vector2 delta = currentPos - _lastTouchPosition;
-                    if (delta.magnitude < 100f)
-                    {
+                    if (delta.magnitude < 100f)                     {
                         _inputDelta = -delta * touchSpeed;
                     }
                     _lastTouchPosition = currentPos;
                 }
             }
         }
-        else if (activeTouches >= 2)
+                else if (activeTouches >= 2)
         {
-
             _inputDelta = Vector2.zero;
             _wasTouching = false;
-
 
             TouchControl touch1 = null;
             TouchControl touch2 = null;
@@ -182,14 +177,12 @@ public class CameraMove : MonoBehaviour
 
                 if (!_isPinching)
                 {
-
                     _initialTouchDistance = currentDistance;
                     _initialZoomSize = _targetOrthographicSize;
                     _isPinching = true;
                 }
                 else
                 {
-
                     float distanceDelta = currentDistance - _initialTouchDistance;
                     float zoomDelta = distanceDelta * pinchZoomSensitivity;
                     if (invertScroll) zoomDelta = -zoomDelta;
@@ -200,11 +193,12 @@ public class CameraMove : MonoBehaviour
         }
         else
         {
-
             _inputDelta = Vector2.zero;
             _wasTouching = false;
             _isPinching = false;
         }
+
+        return true;
     }
 
     private TouchControl GetPrimaryTouch()
@@ -215,8 +209,7 @@ public class CameraMove : MonoBehaviour
         return null;
     }
 
-
-    public void SetZoom(float zoomLevel)
+        public void SetZoom(float zoomLevel)
     {
         if (enableZoom)
         {

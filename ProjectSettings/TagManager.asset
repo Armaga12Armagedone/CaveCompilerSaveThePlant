@@ -11,6 +11,7 @@ TagManager:
   - Water
   - Stone
   - Building
+  - Enemy
   layers:
   - Default
   - TransparentFX
